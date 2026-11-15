@@ -278,7 +278,11 @@ async function serve(clientApi: 'openai' | 'anthropic', body: Json): Promise<{ r
   const candidates = candidatesFor(requirementsFor(body), clientApi, body);
   for (const route of candidates) {
     const call = upstreamCall(route, clientApi, body);
-    for (let attempt = 0; attempt < ATTEMPTS_PER_CANDIDATE; attempt++) {
+    // The retry exists for a one-off refusal on a provider's failure schedule. A provider that has
+    // already refused a call in this trial is likelier spent or out than unlucky, so its candidates
+    // get the one attempt only: a second refusal would spend a call the tie-break counts for nothing.
+    const attempts = (refusals.get(route.probe.provider.id) ?? 0) === 0 ? ATTEMPTS_PER_CANDIDATE : 1;
+    for (let attempt = 0; attempt < attempts; attempt++) {
       let upstream: Response;
       try {
         upstream = await fetch(call.url, {
